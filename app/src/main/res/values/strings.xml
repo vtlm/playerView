@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">PlayerView</string>
+    <string name="element_text">PlayerViewItem</string>
+</resources>
