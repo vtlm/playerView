@@ -3,8 +3,6 @@ package com.example.playerview
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.media.AudioManager
-import android.media.AudioMetadata
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
@@ -83,12 +81,15 @@ class CustomAdapter(private val dataSet: ArrayList<String>,
 }
 
 @UnstableApi
-class TrackData(private val mediaItem: MediaItem, context: Context, adapter: CustomAdapter, dataset: ArrayList<String>){
+class MediaData(private val uri: Uri, private val context: Context, private val onDataReady: () -> Unit){
 
+    private val mediaItem = MediaItem.Builder().setUri(uri).build();
     private val trackGroupsFuture = MetadataRetriever.retrieveMetadata(context, mediaItem)
     var trackGroup: TrackGroup? = null
+    var requestDone: Int = 0
+    lateinit var titleString:String
 
-    init {
+    fun requestMediaData() {
         Futures.addCallback(
             trackGroupsFuture,
             object : FutureCallback<TrackGroupArray?> {
@@ -124,43 +125,74 @@ class TrackData(private val mediaItem: MediaItem, context: Context, adapter: Cus
                          //   if
                         }
 
-                        dataset.add(resStr)
+                        titleString = resStr
 
-//                        0.until(trackGroups.length)
-//                            .asSequence()
-//                            .mapNotNull { trackGroups[it].getFormat(0).metadata}
-////                            .filter { metadata -> metadata.length() == 1 }
-////                            .map { it -> it. }
-////                            .filterIsInstance<Metadata>()
-//                            .forEachIndexed(){index, it ->
-//                                Log.d("DBG_1","index: $index val: $it.toString()")
-//                            }
+//                        dataset.add(resStr)
+
                     }
-                    adapter.notifyDataSetChanged()
+//                    adapter.notifyDataSetChanged()
+                    requestDone = 1
+                    onDataReady()
                 }
 
                 override fun onFailure(t: Throwable) {
                     //handleFailure(t)
+                    Log.d("DBG_HF","Failed to retrieve mediadata")
                 }
             },
             context.mainExecutor
         )
     }
 
+    fun asString() :String = titleString
+
+}
+//todo: move adapter to level up to TrackList
+//todo dataset to trackdata
+class TrackList(private val context: Context, private val player: Player){
+
+    private var tracksList = arrayListOf<MediaData>()
+    private var dataset = arrayListOf<String>()
+    private var mediaSources = listOf<MediaItem>()
+    val adapter = CustomAdapter(dataset, onItemClicked = {
+        Log.d("DBG_IC","You click $it")
+        val ind=dataset.indexOf(it)
+        player!!.seekTo(ind,0)
+    })
+
+    @OptIn(UnstableApi::class)
+    fun addFromFiles(files:Array<DocumentFile>){
+        tracksList.clear()
+        dataset.clear()
+
+        for(file in files){
+            if(file.uri.toString().contains("mp3")){
+                tracksList += MediaData(file.uri,context,onDataReady = {
+                    if(!(tracksList.find {it.requestDone == 0} != null)){
+
+                        tracksList.forEach { it-> dataset += it.asString() }
+                        adapter.notifyDataSetChanged()
+                    }
+                })
+            }
+        }
+
+        for(t in tracksList){
+            t.requestMediaData()
+        }
+
+    }
 }
 
 class MainActivity : AppCompatActivity() {
 
     private var itemsUri = listOf<Uri>()
     private var mediaSources = listOf<MediaItem>()
-    private var tracksList = arrayListOf<TrackData>()
+    private var tracksList = arrayListOf<MediaData>()
 
-    var dataset = arrayListOf<String>("January", "February", "March")
-    val customAdapter = CustomAdapter(dataset, onItemClicked = {
-        Log.d("DBG_IC","You click $it")
-        exoPlayer!!.seekTo(4,0)
-    })
+//    var dataset = arrayListOf<String>("January", "February", "March")
 
+    private var trackList: TrackList? = null
     private var exoPlayer: ExoPlayer? = null//exoPlayer
 
     fun onItemClicked(s:String){
@@ -170,6 +202,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
@@ -177,8 +210,6 @@ class MainActivity : AppCompatActivity() {
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
-
-
 
         val button = findViewById<Button>(R.id.button_choose)
         button.setOnClickListener {
@@ -193,17 +224,17 @@ class MainActivity : AppCompatActivity() {
             startActivityForResult(intent, REQ_CODE)
         }
 
+        exoPlayer = ExoPlayer.Builder(applicationContext).build()
+        val playerView = findViewById<PlayerView>(R.id.player_view)
+        playerView.player = exoPlayer
 
+        trackList = TrackList(applicationContext, exoPlayer!!)
 
         val recyclerView: RecyclerView = findViewById(R.id.recycler_view)
         recyclerView.layoutManager = LinearLayoutManager(this)
-        recyclerView.adapter = customAdapter
+        recyclerView.adapter = trackList!!.adapter
 
 
-        val context = applicationContext
-        exoPlayer = ExoPlayer.Builder(context).build()
-        val playerView = findViewById<PlayerView>(R.id.player_view)
-        playerView.player = exoPlayer
 
         exoPlayer!!.addListener(
             object : Player.Listener {
@@ -243,6 +274,7 @@ class MainActivity : AppCompatActivity() {
 
             }
         )
+
     }
 
     override fun onDestroy() {
@@ -264,57 +296,32 @@ class MainActivity : AppCompatActivity() {
                 Log.d("DBG",directoryUri.toString())
                 val documentsTree = DocumentFile.fromTreeUri(getApplication(), directoryUri) ?: return
                 val childDocuments = documentsTree.listFiles();//.toCachingList()
+
+                trackList!!.addFromFiles(documentsTree.listFiles())
+
                 Log.d("DBG","Number of childs ${childDocuments.size}")
                 for(doc in childDocuments){
-                    Log.d("DBG",doc.uri.toString())
+//                    Log.d("DBG",doc.uri.toString())
                     itemsUri+=doc.uri
-
+//                    trackList.addUri(doc.uri)
                 }
 
                 tracksList.clear()
-                dataset.clear()
+//                dataset.clear()
 
                 for (uri in itemsUri){
 
-                    val uri_str=uri.toString();
-                    if(uri_str.contains("mp3")) {
+                    val uriStr=uri.toString();
+                    if(uriStr.contains("mp3")) {
                         Log.d("DBG_URI", uri.toString())
                         Log.d("DBG_URI", uri.normalizeScheme().toString())
-//        val turi=Uri.parse("content://storage/9C33-6BBD%3AMusic%2FStolen%2FMetal%2FArtillery%2F1990%20-%20By%20Inheritance%2F02.%20Khomaniac.mp3")
-//        val mediaItem=MediaItem.fromUri(turi);
                         val mediaItem = MediaItem.Builder().setUri(uri).build();
-                        Log.d("DBG", mediaItem.mediaId)
-                        Log.d("DBG", mediaItem.mediaMetadata.title.toString())
-                        Log.d("DBG", mediaItem.toString())
-//                        mediaItem.requestMetadata
                         mediaSources += mediaItem;
-//                        dataset += uri.path.toString()
-//                        dataset += mediaItem.mediaMetadata.title.toString()
-//                        dataset += mediaItem.mediaMetadata.
 
-                        tracksList += TrackData(mediaItem,applicationContext,customAdapter,dataset)
-
-//                        val trackGroupsFuture = MetadataRetriever.retrieveMetadata(applicationContext, mediaItem)
-//                        Futures.addCallback(
-//                            trackGroupsFuture,
-//                            object : FutureCallback<TrackGroupArray?> {
-//                                override fun onSuccess(trackGroups: TrackGroupArray?) {
-//                                    if (trackGroups != null) {//handleMetadata(trackGroups)
-//                                        trackGroups.length
-//                                    }
-//                                }
-//
-//                                override fun onFailure(t: Throwable) {
-//                                    //handleFailure(t)
-//                                }
-//                            },
-//                            applicationContext.mainExecutor
-//                        )
+//                        tracksList += MediaData(mediaItem,applicationContext,customAdapter,dataset)
 
                     }
                 }
-
-//                customAdapter.notifyDataSetChanged()
 
                 exoPlayer!!.setMediaItems(mediaSources)
                 exoPlayer!!.prepare()
