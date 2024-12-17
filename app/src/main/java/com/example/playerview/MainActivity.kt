@@ -81,7 +81,7 @@ class CustomAdapter(private val dataSet: ArrayList<String>,
 }
 
 @UnstableApi
-class MediaData(private val uri: Uri, private val context: Context, private val onDataReady: () -> Unit){
+class MediaData(val uri: Uri, private val context: Context, private val onDataReady: () -> Unit){
 
     private val mediaItem = MediaItem.Builder().setUri(uri).build();
     private val trackGroupsFuture = MetadataRetriever.retrieveMetadata(context, mediaItem)
@@ -154,16 +154,27 @@ class TrackList(private val context: Context, private val player: Player){
     private var tracksList = arrayListOf<MediaData>()
     private var dataset = arrayListOf<String>()
     private var mediaSources = listOf<MediaItem>()
+
     val adapter = CustomAdapter(dataset, onItemClicked = {
         Log.d("DBG_IC","You click $it")
         val ind=dataset.indexOf(it)
         player!!.seekTo(ind,0)
     })
 
+
+    fun play(){
+        for(t in tracksList){
+            mediaSources += MediaItem.Builder().setUri(t.uri).build()
+        }
+        player!!.setMediaItems(mediaSources)
+        player!!.prepare()
+        player!!.play()
+
+    }
     @OptIn(UnstableApi::class)
     fun addFromFiles(files:Array<DocumentFile>){
-        tracksList.clear()
-        dataset.clear()
+//        tracksList.clear()
+//        dataset.clear()
 
         for(file in files){
             if(file.uri.toString().contains("mp3")){
@@ -172,6 +183,7 @@ class TrackList(private val context: Context, private val player: Player){
 
                         tracksList.forEach { it-> dataset += it.asString() }
                         adapter.notifyDataSetChanged()
+                        play()
                     }
                 })
             }
@@ -185,12 +197,6 @@ class TrackList(private val context: Context, private val player: Player){
 }
 
 class MainActivity : AppCompatActivity() {
-
-    private var itemsUri = listOf<Uri>()
-    private var mediaSources = listOf<MediaItem>()
-    private var tracksList = arrayListOf<MediaData>()
-
-//    var dataset = arrayListOf<String>("January", "February", "March")
 
     private var trackList: TrackList? = null
     private var exoPlayer: ExoPlayer? = null//exoPlayer
@@ -211,8 +217,8 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
-        val button = findViewById<Button>(R.id.button_choose)
-        button.setOnClickListener {
+        val addButton = findViewById<Button>(R.id.button_choose)
+        addButton.setOnClickListener {
             // Code here executes on main thread after user presses button
             Log.d("DBG","button clicked")
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
@@ -299,39 +305,39 @@ class MainActivity : AppCompatActivity() {
 
                 trackList!!.addFromFiles(documentsTree.listFiles())
 
-                Log.d("DBG","Number of childs ${childDocuments.size}")
-                for(doc in childDocuments){
-//                    Log.d("DBG",doc.uri.toString())
-                    itemsUri+=doc.uri
-//                    trackList.addUri(doc.uri)
-                }
+//                Log.d("DBG","Number of childs ${childDocuments.size}")
+//                for(doc in childDocuments){
+////                    Log.d("DBG",doc.uri.toString())
+//                    itemsUri+=doc.uri
+////                    trackList.addUri(doc.uri)
+//                }
 
-                tracksList.clear()
+//                tracksList.clear()
 //                dataset.clear()
 
-                for (uri in itemsUri){
+//                for (uri in itemsUri){
+//
+//                    val uriStr=uri.toString();
+//                    if(uriStr.contains("mp3")) {
+////                        Log.d("DBG_URI", uri.toString())
+////                        Log.d("DBG_URI", uri.normalizeScheme().toString())
+//                        val mediaItem = MediaItem.Builder().setUri(uri).build();
+//                        mediaSources += mediaItem;
+//
+////                        tracksList += MediaData(mediaItem,applicationContext,customAdapter,dataset)
+//
+//                    }
+//                }
 
-                    val uriStr=uri.toString();
-                    if(uriStr.contains("mp3")) {
-                        Log.d("DBG_URI", uri.toString())
-                        Log.d("DBG_URI", uri.normalizeScheme().toString())
-                        val mediaItem = MediaItem.Builder().setUri(uri).build();
-                        mediaSources += mediaItem;
+//                exoPlayer!!.setMediaItems(mediaSources)
+//                exoPlayer!!.prepare()
+//                exoPlayer!!.play()
 
-//                        tracksList += MediaData(mediaItem,applicationContext,customAdapter,dataset)
-
-                    }
-                }
-
-                exoPlayer!!.setMediaItems(mediaSources)
-                exoPlayer!!.prepare()
-                exoPlayer!!.play()
-
-                val count= exoPlayer!!.mediaItemCount
-                for(c in 0..count - 1){
-                    val item = exoPlayer!!.getMediaItemAt(c)
-                    Log.d("DMG_MI", item.mediaMetadata.title.toString())
-                }
+//                val count= exoPlayer!!.mediaItemCount
+//                for(c in 0..count - 1){
+//                    val item = exoPlayer!!.getMediaItemAt(c)
+//                    Log.d("DMG_MI", item.mediaMetadata.title.toString())
+//                }
             }
         }
     }
