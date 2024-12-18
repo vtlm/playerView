@@ -153,7 +153,7 @@ class TrackList(private val context: Context, private val player: Player){
 
     private var tracksList = arrayListOf<MediaData>()
     private var dataset = arrayListOf<String>()
-    private var mediaSources = listOf<MediaItem>()
+    private var mediaSources = arrayListOf<MediaItem>()
 
     val adapter = CustomAdapter(dataset, onItemClicked = {
         Log.d("DBG_IC","You click $it")
@@ -161,6 +161,12 @@ class TrackList(private val context: Context, private val player: Player){
         player!!.seekTo(ind,0)
     })
 
+    fun clear(){
+        tracksList.clear()
+        mediaSources.clear()
+        dataset.clear()
+        adapter.notifyDataSetChanged()
+    }
 
     fun play(){
         for(t in tracksList){
@@ -230,6 +236,13 @@ class MainActivity : AppCompatActivity() {
             startActivityForResult(intent, REQ_CODE)
         }
 
+        val clearButton = findViewById<Button>(R.id.button_clear)
+        clearButton.setOnClickListener {
+            exoPlayer?.clearMediaItems()
+            trackList?.clear()
+        }
+
+
         exoPlayer = ExoPlayer.Builder(applicationContext).build()
         val playerView = findViewById<PlayerView>(R.id.player_view)
         playerView.player = exoPlayer
@@ -285,7 +298,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-
         exoPlayer!!.release()
     }
 
@@ -301,43 +313,7 @@ class MainActivity : AppCompatActivity() {
                 // Perform operations on the document using its URI.
                 Log.d("DBG",directoryUri.toString())
                 val documentsTree = DocumentFile.fromTreeUri(getApplication(), directoryUri) ?: return
-                val childDocuments = documentsTree.listFiles();//.toCachingList()
-
                 trackList!!.addFromFiles(documentsTree.listFiles())
-
-//                Log.d("DBG","Number of childs ${childDocuments.size}")
-//                for(doc in childDocuments){
-////                    Log.d("DBG",doc.uri.toString())
-//                    itemsUri+=doc.uri
-////                    trackList.addUri(doc.uri)
-//                }
-
-//                tracksList.clear()
-//                dataset.clear()
-
-//                for (uri in itemsUri){
-//
-//                    val uriStr=uri.toString();
-//                    if(uriStr.contains("mp3")) {
-////                        Log.d("DBG_URI", uri.toString())
-////                        Log.d("DBG_URI", uri.normalizeScheme().toString())
-//                        val mediaItem = MediaItem.Builder().setUri(uri).build();
-//                        mediaSources += mediaItem;
-//
-////                        tracksList += MediaData(mediaItem,applicationContext,customAdapter,dataset)
-//
-//                    }
-//                }
-
-//                exoPlayer!!.setMediaItems(mediaSources)
-//                exoPlayer!!.prepare()
-//                exoPlayer!!.play()
-
-//                val count= exoPlayer!!.mediaItemCount
-//                for(c in 0..count - 1){
-//                    val item = exoPlayer!!.getMediaItemAt(c)
-//                    Log.d("DMG_MI", item.mediaMetadata.title.toString())
-//                }
             }
         }
     }
