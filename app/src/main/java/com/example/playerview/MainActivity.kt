@@ -3,18 +3,22 @@ package com.example.playerview
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
+import android.text.Layout
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.documentfile.provider.DocumentFile
@@ -122,15 +126,9 @@ class MediaData(val uri: Uri, private val context: Context, private val onDataRe
                             if(ti?.id == "TIT2"){
                                 resStr += ti?.values?.get(0).toString()
                             }
-                         //   if
                         }
-
                         titleString = resStr
-
-//                        dataset.add(resStr)
-
                     }
-//                    adapter.notifyDataSetChanged()
                     requestDone = 1
                     onDataReady()
                 }
@@ -152,6 +150,7 @@ class MediaData(val uri: Uri, private val context: Context, private val onDataRe
 class TrackList(private val context: Context, private val player: Player){
 
     private var tracksList = arrayListOf<MediaData>()
+    private var tracksListAdded=arrayListOf<MediaData>()
     private var dataset = arrayListOf<String>()
     private var mediaSources = arrayListOf<MediaItem>()
 
@@ -169,34 +168,44 @@ class TrackList(private val context: Context, private val player: Player){
     }
 
     fun play(){
-        for(t in tracksList){
-            mediaSources += MediaItem.Builder().setUri(t.uri).build()
-        }
-        player!!.setMediaItems(mediaSources)
-        player!!.prepare()
-        player!!.play()
+//        mediaSources.clear()
+//        for(t in tracksList){
+//            mediaSources += MediaItem.Builder().setUri(t.uri).build()
+//        }
+//        player.setMediaItems(mediaSources)
+        player.prepare()
+        player.play()
 
     }
     @OptIn(UnstableApi::class)
     fun addFromFiles(files:Array<DocumentFile>){
-//        tracksList.clear()
+        tracksListAdded.clear()
 //        dataset.clear()
 
         for(file in files){
             if(file.uri.toString().contains("mp3")){
-                tracksList += MediaData(file.uri,context,onDataReady = {
-                    if(!(tracksList.find {it.requestDone == 0} != null)){
-
-                        tracksList.forEach { it-> dataset += it.asString() }
-                        adapter.notifyDataSetChanged()
-                        play()
-                    }
-                })
+                tracksListAdded += MediaData(file.uri, context, onDataReady = ::onFilesMediaDataReady)
             }
         }
 
-        for(t in tracksList){
+        for(t in tracksListAdded){
             t.requestMediaData()
+        }
+
+    }
+
+    @OptIn(UnstableApi::class)
+    fun onFilesMediaDataReady(){
+        if(!(tracksListAdded.find {it.requestDone == 0} != null)){
+
+            tracksListAdded.forEach { it-> dataset += it.asString() }
+            adapter.notifyDataSetChanged()
+            tracksList.addAll(tracksListAdded)
+            for(t in tracksListAdded){
+                player.addMediaItem(MediaItem.Builder().setUri(t.uri).build())
+            }
+
+//            play()
         }
 
     }
@@ -205,7 +214,7 @@ class TrackList(private val context: Context, private val player: Player){
 class MainActivity : AppCompatActivity() {
 
     private var trackList: TrackList? = null
-    private var exoPlayer: ExoPlayer? = null//exoPlayer
+    private var exoPlayer: ExoPlayer? = null
 
     fun onItemClicked(s:String){
         Log.d("DBG_IC","You click $s")
@@ -213,7 +222,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
 
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
@@ -242,61 +250,81 @@ class MainActivity : AppCompatActivity() {
             trackList?.clear()
         }
 
+        if(exoPlayer == null) {
+            exoPlayer = ExoPlayer.Builder(applicationContext).build()
+            val playerView = findViewById<PlayerView>(R.id.player_view)
+            playerView.player = exoPlayer
 
-        exoPlayer = ExoPlayer.Builder(applicationContext).build()
-        val playerView = findViewById<PlayerView>(R.id.player_view)
-        playerView.player = exoPlayer
+            exoPlayer!!.addListener(
+                object : Player.Listener {
 
-        trackList = TrackList(applicationContext, exoPlayer!!)
+                    override fun onPlayerError(error: PlaybackException) {
+                        val cause = error.cause
+                        if (cause is HttpDataSource.HttpDataSourceException) {
+                            // An HTTP error occurred.
+                            val httpError = cause
+                            // It's possible to find out more about the error both by casting and by querying
+                            // the cause.
+                            if (httpError is HttpDataSource.InvalidResponseCodeException) {
+                                // Cast to InvalidResponseCodeException and retrieve the response code, message
+                                // and headers.
+                            } else {
+                                // Try calling httpError.getCause() to retrieve the underlying cause, although
+                                // note that it may be null.
+                            }
+                        }
+                    }
+
+                    override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
+                        var songInfo = "";
+                        mediaMetadata.artist?.let {
+                            Log.d("DBG", it.toString())
+                            songInfo += it.toString()
+                        }
+                        mediaMetadata.albumTitle?.let {
+                            Log.d("DBG", it.toString())
+                            songInfo += "-"
+                            songInfo += it.toString()
+                        }
+                        mediaMetadata.title?.let {
+                            Log.d("DBG", it.toString())
+                            songInfo += "-"
+                            songInfo += it.toString()
+                        }
+                        findViewById<TextView>(R.id.id_title).setText(songInfo)
+                    }
+
+                }
+            )
+        }
+
+        if(trackList == null) {
+            trackList = TrackList(applicationContext, exoPlayer!!)
+        }
 
         val recyclerView: RecyclerView = findViewById(R.id.recycler_view)
         recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.adapter = trackList!!.adapter
 
 
-
-        exoPlayer!!.addListener(
-            object : Player.Listener {
-
-                override fun onPlayerError(error: PlaybackException) {
-                    val cause = error.cause
-                    if (cause is HttpDataSource.HttpDataSourceException) {
-                        // An HTTP error occurred.
-                        val httpError = cause
-                        // It's possible to find out more about the error both by casting and by querying
-                        // the cause.
-                        if (httpError is HttpDataSource.InvalidResponseCodeException) {
-                            // Cast to InvalidResponseCodeException and retrieve the response code, message
-                            // and headers.
-                        } else {
-                            // Try calling httpError.getCause() to retrieve the underlying cause, although
-                            // note that it may be null.
-                        }
-                    }
-                }
-
-                override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
-                    var songInfo="";
-                    mediaMetadata.artist?.let{Log.d("DBG",it.toString())
-                        songInfo += it.toString()
-                    }
-                    mediaMetadata.albumTitle?.let{Log.d("DBG",it.toString())
-                        songInfo += "-"
-                        songInfo += it.toString()
-                    }
-                    mediaMetadata.title?.let{Log.d("DBG",it.toString())
-                        songInfo += "-"
-                        songInfo += it.toString()
-                    }
-                    findViewById<TextView>(R.id.id_title).setText(songInfo)
-            }
-
-            }
-        )
-
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+
+        findViewById<ConstraintLayout>(R.id.main).invalidate();
+
+        // Checks whether a keyboard is available
+        if (newConfig.keyboardHidden === Configuration.KEYBOARDHIDDEN_YES) {
+            Toast.makeText(this, "Keyboard available", Toast.LENGTH_SHORT).show()
+        } else if (newConfig.keyboardHidden === Configuration.KEYBOARDHIDDEN_NO) {
+            Toast.makeText(this, "No keyboard", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+
     override fun onDestroy() {
+        Log.d("DBG_RC","onDestroy")
         super.onDestroy()
         exoPlayer!!.release()
     }
